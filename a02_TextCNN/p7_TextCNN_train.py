@@ -12,12 +12,12 @@ import numpy as np
 from p7_TextCNN_model import TextCNN
 from data_util import create_vocabulary,load_data_multilabel
 import os
-import word2vec
-
+#import word2vec
+from gensim.models import word2vec
 #configuration
 FLAGS=tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_string("traning_data_path","../data/sample_multiple_label.txt","path of traning data.") #sample_multiple_label.txt-->train_label_single100_merge
+tf.app.flags.DEFINE_string("traning_data_path","/home/nguyen/stackoverflow/save/data/train.out","path of traning data.") #sample_multiple_label.txt-->train_label_single100_merge
 tf.app.flags.DEFINE_integer("vocab_size",100000,"maximum vocab size.")
 
 tf.app.flags.DEFINE_float("learning_rate",0.0003,"learning rate")
@@ -34,7 +34,7 @@ tf.app.flags.DEFINE_boolean("use_embedding",False,"whether to use embedding or n
 tf.app.flags.DEFINE_integer("num_filters", 128, "number of filters") #256--->512
 tf.app.flags.DEFINE_string("word2vec_model_path","word2vec-title-desc.bin","word2vec's vocabulary and vectors")
 tf.app.flags.DEFINE_string("name_scope","cnn","name scope value.")
-tf.app.flags.DEFINE_boolean("multi_label_flag",True,"use multi label or single label.")
+tf.app.flags.DEFINE_boolean("multi_label_flag",False,"use multi label or single label.")
 filter_sizes=[6,7,8]
 
 #1.load data(X:list of lint,y:int). 2.create session. 3.feed data. 4.training (5.validation) ,(6.prediction)
@@ -49,6 +49,8 @@ def main(_):
     print("length of training data:",len(trainX),";length of validation data:",len(testX))
     print("trainX[0]:", trainX[0]);
     print("trainY[0]:", trainY[0])
+    print(trainY[0:10].shape)
+    print(trainY.dtype)
     train_y_short = get_target_label_short(trainY[0])
     print("train_y_short:", train_y_short)
 
@@ -85,7 +87,9 @@ def main(_):
                     print("trainX[start:end]:",trainX[start:end])
                 feed_dict = {textCNN.input_x: trainX[start:end],textCNN.dropout_keep_prob: 0.5,textCNN.iter: iteration,textCNN.tst: not FLAGS.is_training}
                 if not FLAGS.multi_label_flag:
+                    print("Binary classification")
                     feed_dict[textCNN.input_y] = trainY[start:end]
+                    print(trainY[start:end][0:10])
                 else:
                     feed_dict[textCNN.input_y_multilabel]=trainY[start:end]
                 curr_loss,lr,_,_=sess.run([textCNN.loss_val,textCNN.learning_rate,textCNN.update_ema,textCNN.train_op],feed_dict)
@@ -126,7 +130,7 @@ def do_eval(sess,textCNN,evalX,evalY,iteration):
     eval_loss,eval_counter,eval_f1_score,eval_p,eval_r=0.0,0,0.0,0.0,0.0
     batch_size=1
     for start,end in zip(range(0,number_examples,batch_size),range(batch_size,number_examples,batch_size)):
-        feed_dict = {textCNN.input_x: evalX[start:end], textCNN.input_y_multilabel:evalY[start:end],textCNN.dropout_keep_prob: 1.0,textCNN.iter: iteration,textCNN.tst: True}
+        feed_dict = {textCNN.input_x: evalX[start:end], textCNN.input_y:evalY[start:end],textCNN.dropout_keep_prob: 1.0,textCNN.iter: iteration,textCNN.tst: True}
         curr_eval_loss, logits= sess.run([textCNN.loss_val,textCNN.logits],feed_dict)#curr_eval_acc--->textCNN.accuracy
         label_list_top5 = get_label_using_logits(logits[0])
         f1_score,p,r=compute_f1_score(list(label_list_top5), evalY[start:end][0])
@@ -142,6 +146,7 @@ def compute_f1_score(label_list_top5,eval_y):
     """
     num_correct_label=0
     eval_y_short=get_target_label_short(eval_y)
+    
     for label_predict in label_list_top5:
         if label_predict in eval_y_short:
             num_correct_label=num_correct_label+1
