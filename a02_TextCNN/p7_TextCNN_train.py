@@ -87,9 +87,9 @@ def main(_):
                     print("trainX[start:end]:",trainX[start:end])
                 feed_dict = {textCNN.input_x: trainX[start:end],textCNN.dropout_keep_prob: 0.5,textCNN.iter: iteration,textCNN.tst: not FLAGS.is_training}
                 if not FLAGS.multi_label_flag:
-                    print("Binary classification")
+                    #print("Binary classification")
                     feed_dict[textCNN.input_y] = trainY[start:end]
-                    print(trainY[start:end][0:10])
+                    #print(trainY[start:end][0:10])
                 else:
                     feed_dict[textCNN.input_y_multilabel]=trainY[start:end]
                 curr_loss,lr,_,_=sess.run([textCNN.loss_val,textCNN.learning_rate,textCNN.update_ema,textCNN.train_op],feed_dict)
@@ -99,8 +99,8 @@ def main(_):
 
                 ########################################################################################################
                 if start%(2000*FLAGS.batch_size)==0: # eval every 3000 steps.
-                    eval_loss, f1_score, precision, recall = do_eval(sess, textCNN, testX, testY,iteration)
-                    print("Epoch %d Validation Loss:%.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (epoch, eval_loss, f1_score, precision, recall))
+                    eval_loss, acc, f1_score, precision, recall = do_eval(sess, textCNN, testX, testY,iteration)
+                    print("Epoch %d Validation Loss:%.3f\tAcc:%.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (epoch, eval_loss, acc,f1_score, precision, recall))
                     # save model to checkpoint
                     save_path = FLAGS.ckpt_dir + "model.ckpt"
                     saver.save(sess, save_path, global_step=epoch)
@@ -112,8 +112,8 @@ def main(_):
             # 4.validation
             print(epoch,FLAGS.validate_every,(epoch % FLAGS.validate_every==0))
             if epoch % FLAGS.validate_every==0:
-                eval_loss,f1_score,precision,recall=do_eval(sess,textCNN,testX,testY,iteration)
-                print("Epoch %d Validation Loss:%.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (epoch,eval_loss,f1_score,precision,recall))
+                eval_loss,acc,f1_score,precision,recall=do_eval(sess,textCNN,testX,testY,iteration)
+                print("Epoch %d Validation Loss:%.3f\tacc:%.3f\tF1 Score:%.3f\tPrecision:%.3f\tRecall:%.3f" % (epoch,eval_loss,acc,f1_score,precision,recall))
                 #save model to checkpoint
                 save_path=FLAGS.ckpt_dir+"model.ckpt"
                 saver.save(sess,save_path,global_step=epoch)
@@ -127,23 +127,43 @@ def main(_):
 # 在验证集上做验证，报告损失、精确度
 def do_eval(sess,textCNN,evalX,evalY,iteration):
     number_examples=len(evalX)
-    eval_loss,eval_counter,eval_f1_score,eval_p,eval_r=0.0,0,0.0,0.0,0.0
+    eval_loss,eval_counter,eval_f1_score,eval_p,eval_r,eval_acc=0.0,0,0.0,0.0,0.0,0.0
     batch_size=1
+    TP,TN,FP,FN=0,0,0,0
+    
     for start,end in zip(range(0,number_examples,batch_size),range(batch_size,number_examples,batch_size)):
         feed_dict = {textCNN.input_x: evalX[start:end], textCNN.input_y:evalY[start:end],textCNN.dropout_keep_prob: 1.0,textCNN.iter: iteration,textCNN.tst: True}
-        curr_eval_loss, logits= sess.run([textCNN.loss_val,textCNN.logits],feed_dict)#curr_eval_acc--->textCNN.accuracy
+        curr_eval_loss, logits,acc,pred= sess.run([textCNN.loss_val,textCNN.logits,textCNN.accuracy,textCNN.predictions],feed_dict)#curr_eval_acc--->textCNN.accuracy
         label_list_top5 = get_label_using_logits(logits[0])
-        f1_score,p,r=compute_f1_score(list(label_list_top5), evalY[start:end][0])
-        eval_loss,eval_counter,eval_f1_score,eval_p,eval_r=eval_loss+curr_eval_loss,eval_counter+1,eval_f1_score+f1_score,eval_p+p,eval_r+r
-    return eval_loss/float(eval_counter),eval_f1_score/float(eval_counter),eval_p/float(eval_counter),eval_r/float(eval_counter)
+        eval_counter += 1
+        eval_acc += acc
+        if label_list_top5[0]==1:
+          if acc == 1:
+            TP += 1
+          else:
+            FN += 1
+        if label_list_top5[0]==0:
+          if acc == 1:
+            FP += 1
+          else:
+            TN += 1
 
-def compute_f1_score(label_list_top5,eval_y):
+                
+                
+    precision = TP / float(TP + FP) 
+    recall = TP / float(TP + FN)       
+    return  eval_loss/float(eval_counter),eval_acc / float(eval_counter), 2 * (precision * recall)/float(precision + recall), precision, recall
+
+def compute_acc(label_list_top5,eval_y):
     """
     compoute f1_score.
     :param logits: [batch_size,label_size]
     :param evalY: [batch_size,label_size]
     :return:
     """
+    
+    #print(label_list_top5)
+    #print(eval_y)
     num_correct_label=0
     eval_y_short=get_target_label_short(eval_y)
     
@@ -153,11 +173,10 @@ def compute_f1_score(label_list_top5,eval_y):
     #P@5=Precision@5
     num_labels_predicted=len(label_list_top5)
     all_real_labels=len(eval_y_short)
-    p_5=num_correct_label/num_labels_predicted
-    #R@5=Recall@5
-    r_5=num_correct_label/all_real_labels
-    f1_score=2.0*p_5*r_5/(p_5+r_5+0.000001)
-    return f1_score,p_5,r_5
+    acc=num_correct_label/num_labels_predicted
+    
+   
+    return acc
 
 def get_target_label_short(eval_y):
     eval_y_short=[] #will be like:[22,642,1391]
@@ -165,9 +184,11 @@ def get_target_label_short(eval_y):
         if label>0:
             eval_y_short.append(index)
     return eval_y_short
-
 #get top5 predicted labels
-def get_label_using_logits(logits,top_number=5):
+def get_label_using_logits(logits,top_number=1):
+    
+    #print("logits: ")
+    #print(logits)
     index_list=np.argsort(logits)[-top_number:]
     index_list=index_list[::-1]
     return index_list

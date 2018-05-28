@@ -50,8 +50,8 @@ class TextCNN:
         if not self.multi_label_flag:
             self.predictions = tf.argmax(self.logits, 1, name="predictions")  # shape:[None,]
             print("self.predictions:", self.predictions)
-            correct_prediction = tf.equal(tf.cast(self.predictions,tf.float32), self.input_y) #tf.argmax(self.logits, 1)-->[batch_size]
-            self.accuracy =tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name="Accuracy") # shape=()
+            correct_prediction = tf.equal(tf.cast(self.predictions,tf.int64), tf.argmax(self.input_y,1)) #tf.argmax(self.logits, 1)-->[batch_size]
+            self.accuracy =tf.cast(correct_prediction, tf.float32,name="Accuracy") # shape=()
 
     def instantiate_weights(self):
         """define all weights here"""
